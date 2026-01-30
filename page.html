@@ -1,0 +1,239 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Quản Lý Sản Phẩm - Đã Fix Ảnh</title>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    
+    <style>
+        body { 
+            font-family: 'Segoe UI', sans-serif; 
+            padding: 20px; 
+            background-color: #f4f4f4; 
+        }
+
+        /* 1. THANH CÔNG CỤ */
+        .controls {
+            background: white;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 2px 5px rgba(0,0,0,0.1);
+            display: flex;
+            gap: 15px;
+            flex-wrap: wrap;
+            align-items: center;
+            margin-bottom: 20px;
+        }
+
+        input, select, button {
+            padding: 10px;
+            border: 1px solid #ddd;
+            border-radius: 5px;
+            font-size: 14px;
+        }
+
+        button { cursor: pointer; background: #007bff; color: white; border: none; }
+        button:hover { background: #0056b3; }
+
+        /* 2. BẢNG DỮ LIỆU */
+        table { width: 100%; border-collapse: collapse; background: white; box-shadow: 0 5px 15px rgba(0,0,0,0.1); }
+        th, td { padding: 12px; text-align: left; border: 1px solid #ccc; vertical-align: middle; }
+        
+        th { background-color: #333; color: white; text-transform: uppercase; }
+
+        /* Zebra Striping: Dòng Lẻ Trắng, Dòng Chẵn Đen */
+        tbody tr:nth-child(odd) {
+            background-color: #ffffff;
+            color: #000000;
+        }
+        tbody tr:nth-child(even) {
+            background-color: #000000;
+            color: #ffffff;
+        }
+        /* Viền mờ cho dòng màu đen để dễ nhìn */
+        tbody tr:nth-child(even) td { border-color: #444; }
+
+        /* 3. GALLERY ẢNH */
+        .img-gallery { display: flex; gap: 5px; flex-wrap: wrap; max-width: 300px; }
+        .product-thumb { 
+            width: 50px; height: 50px; 
+            object-fit: cover; 
+            border: 1px solid #999; 
+            border-radius: 4px;
+            background-color: #fff;
+        }
+
+        /* 4. PHÂN TRANG */
+        .pagination { margin-top: 20px; display: flex; justify-content: center; gap: 10px; align-items: center; }
+        .page-info { font-weight: bold; }
+    </style>
+</head>
+<body>
+
+    <div class="controls">
+        <input type="text" id="searchInput" placeholder="🔍 Tìm theo tên..." oninput="handleSearch()" style="flex: 1; min-width: 200px;">
+        
+        <label>Hiển thị:</label>
+        <select id="pageSize" onchange="handlePageSize()">
+            <option value="5">5 dòng</option>
+            <option value="10" selected>10 dòng</option>
+            <option value="20">20 dòng</option>
+        </select>
+
+        <div style="display: flex; gap: 5px;">
+            <button onclick="sortData('price', 'asc')">Giá Tăng</button>
+            <button onclick="sortData('price', 'desc')">Giá Giảm</button>
+            <button onclick="sortData('title', 'asc')">Tên A-Z</button>
+            <button onclick="sortData('title', 'desc')">Tên Z-A</button>
+        </div>
+    </div>
+
+    <table>
+        <thead>
+            <tr>
+                <th width="5%">ID</th>
+                <th width="25%">Hình Ảnh</th>
+                <th width="35%">Tên Sản Phẩm</th>
+                <th width="10%">Giá ($)</th>
+                <th width="15%">Danh Mục</th>
+            </tr>
+        </thead>
+        <tbody id="tableBody">
+            <tr><td colspan="5" style="text-align: center; padding: 20px;">Đang tải dữ liệu...</td></tr>
+        </tbody>
+    </table>
+
+    <div class="pagination">
+        <button onclick="changePage(-1)">Trước</button>
+        <span class="page-info" id="pageInfo">Trang 1</span>
+        <button onclick="changePage(1)">Sau</button>
+    </div>
+
+    <script>
+        // --- CẤU HÌNH ---
+        const API_URL = 'https://api.escuelajs.co/api/v1/products';
+        let originalData = [];
+        let currentData = [];
+        let currentPage = 1;
+        let pageSize = 10;
+
+        // --- 1. LẤY DỮ LIỆU TỪ API ---
+        async function getAll() {
+            try {
+                const res = await fetch(API_URL);
+                const data = await res.json();
+                originalData = data;
+                currentData = [...originalData];
+                renderTable();
+            } catch (err) {
+                console.error(err);
+                document.getElementById('tableBody').innerHTML = `<tr><td colspan="5" style="color:red; text-align:center;">Lỗi kết nối API!</td></tr>`;
+            }
+        }
+
+        // --- 2. HÀM HIỂN THỊ BẢNG (CORE LOGIC) ---
+        function renderTable() {
+            const tbody = document.getElementById('tableBody');
+            tbody.innerHTML = "";
+
+            // Tính toán phân trang
+            const start = (currentPage - 1) * pageSize;
+            const end = start + pageSize;
+            const items = currentData.slice(start, end);
+
+            if (items.length === 0) {
+                tbody.innerHTML = `<tr><td colspan="5" style="text-align:center;">Không tìm thấy dữ liệu</td></tr>`;
+                document.getElementById('pageInfo').innerText = "Trang 0 / 0";
+                return;
+            }
+
+            items.forEach(item => {
+                let imgHtml = '<div class="img-gallery">';
+                
+                // --- XỬ LÝ ẢNH THÔNG MINH ---
+                if (Array.isArray(item.images)) {
+                    item.images.forEach(rawUrl => {
+                        let cleanUrl = rawUrl;
+
+                        // A. Làm sạch chuỗi URL (Gọt bỏ [" "] thừa thãi)
+                        if (typeof cleanUrl === 'string') {
+                            try { 
+                                cleanUrl = cleanUrl.replace(/[\[\]"\\']/g, ''); 
+                            } catch (e) {}
+                        }
+
+                        // B. [QUAN TRỌNG] Lọc trước các domain đã chết hoặc bị chặn
+                        // Nếu không lọc, Console sẽ báo lỗi đỏ lòm
+                        if (cleanUrl.includes('placeimg.com') || cleanUrl.includes('api.escuelajs.co')) {
+                            // Đổi sang ảnh mẫu màu xám ngay lập tức
+                            cleanUrl = 'https://placehold.co/60x60/e0e0e0/333?text=Demo';
+                        }
+
+                        // C. Render thẻ IMG
+                        if (cleanUrl && cleanUrl.startsWith('http')) {
+                            imgHtml += `<img src="${cleanUrl}" class="product-thumb" 
+                                loading="lazy"
+                                onerror="this.onerror=null; this.src='https://placehold.co/60x60/orange/white?text=No+Img';">`;
+                        }
+                    });
+                }
+                imgHtml += '</div>';
+
+                const row = `
+                    <tr>
+                        <td>${item.id}</td>
+                        <td>${imgHtml}</td>
+                        <td><strong>${item.title}</strong></td>
+                        <td>$${item.price}</td>
+                        <td>${item.category ? item.category.name : 'Unknown'}</td>
+                    </tr>
+                `;
+                tbody.innerHTML += row;
+            });
+
+            // Cập nhật thông tin trang
+            const totalPages = Math.ceil(currentData.length / pageSize);
+            document.getElementById('pageInfo').innerText = `Trang ${currentPage} / ${totalPages || 1}`;
+        }
+
+        // --- 3. CÁC HÀM XỬ LÝ SỰ KIỆN ---
+        function handleSearch() {
+            const key = document.getElementById('searchInput').value.toLowerCase();
+            currentData = originalData.filter(i => i.title.toLowerCase().includes(key));
+            currentPage = 1;
+            renderTable();
+        }
+
+        function handlePageSize() {
+            pageSize = parseInt(document.getElementById('pageSize').value);
+            currentPage = 1;
+            renderTable();
+        }
+
+        function changePage(dir) {
+            const total = Math.ceil(currentData.length / pageSize);
+            const next = currentPage + dir;
+            if (next >= 1 && next <= total) {
+                currentPage = next;
+                renderTable();
+            }
+        }
+
+        function sortData(field, order) {
+            currentData.sort((a, b) => {
+                let va = a[field], vb = b[field];
+                if (typeof va === 'string') { va = va.toLowerCase(); vb = vb.toLowerCase(); }
+                
+                if (va < vb) return order === 'asc' ? -1 : 1;
+                if (va > vb) return order === 'asc' ? 1 : -1;
+                return 0;
+            });
+            renderTable();
+        }
+
+        // Chạy ngay khi mở trang
+        getAll();
+    </script>
+</body>
+</html>
